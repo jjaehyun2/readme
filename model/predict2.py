@@ -7,6 +7,8 @@ from torch_geometric.nn import GCNConv, global_mean_pool
 from rdkit import Chem
 import pickle
 import numpy as np
+from sklearn.metrics import accuracy_score, f1_score
+from collections import Counter
 
 
 class ImprovedFragranceGNN(nn.Module):
@@ -209,39 +211,37 @@ def collate_fn_predict(batch):
         'mol1_notes': mol1_notes,
         'mol2_notes': mol2_notes
     }
-
-
-def predict_with_adaptive_threshold(test_data_path: str, model_path: str) -> list:
-    """적응적 임계값과 Top-K를 사용한 다중 라벨 예측"""
+def predict_with_adaptive_threshold(test_data_path: str, model_path: str):
+    """예측과 실제값을 둘다 반환하도록 수정"""
     device = torch.device('cpu')
-    
+
     # 모델 및 레이블 인코더 로드
     with open(model_path, 'rb') as f:
         model_data = pickle.load(f)
-    
+
     label_encoder = model_data['label_encoder']
     model_config = model_data['model_config']
     label_counts = model_data.get('label_counts', {})
-    
+
     print(f"모델 로드 완료. 레이블 수: {model_config['num_labels']}")
-    
+
     # 테스트 데이터 로드
     with open(test_data_path, 'r', encoding='utf-8') as f:
         test_data = json.load(f)
-    
+    test_data = test_data[:500]  # 테스트 데이터 샘플링
     print(f"테스트 데이터 로드 완료: {len(test_data)}개 샘플")
-    
+
     # 모델 초기화
     model = ImprovedFragranceGNN(
         input_dim=model_config['input_dim'],
         hidden_dim=model_config['hidden_dim'],
         num_labels=model_config['num_labels']
     ).to(device)
-    
+
     # 모델 가중치 로드
     model.load_state_dict(model_data['model_state_dict'])
     model.eval()
-    
+
     # 데이터셋 및 데이터로더 생성
     test_dataset = PredictionDataset(test_data, label_encoder)
     test_loader = DataLoader(
@@ -250,10 +250,9 @@ def predict_with_adaptive_threshold(test_data_path: str, model_path: str) -> lis
         shuffle=False, 
         collate_fn=collate_fn_predict
     )
-    
-    # 예측 수행
+
     all_predictions = []
-    
+    all_true_labels = []
     print("적응적 다중 라벨 예측을 시작합니다...")
     with torch.no_grad():
         for batch_idx, batch in enumerate(test_loader):
@@ -261,88 +260,80 @@ def predict_with_adaptive_threshold(test_data_path: str, model_path: str) -> lis
             mol2_batch = batch['mol2_batch'].to(device)
             mol1_notes = batch['mol1_notes'].to(device)
             mol2_notes = batch['mol2_notes'].to(device)
-            
-            # 모델 예측 (logits 출력)
+
             outputs = model(mol1_batch, mol2_batch, mol1_notes, mol2_notes)
-            # Sigmoid 적용하여 확률로 변환
             probabilities = torch.sigmoid(outputs).cpu().numpy()
-            
-            for prob in probabilities:
+
+            batch_start = batch_idx * test_loader.batch_size
+            for i, prob in enumerate(probabilities):
                 predicted_labels = []
-                
-                # 1. Top-K 방식 (상위 5개 후보 선택)
-                top_k_indices = np.argsort(prob)[-5:][::-1]  # 상위 5개
+                top_k_indices = np.argsort(prob)[-5:][::-1]
                 top_k_probs = prob[top_k_indices]
-                
-                # 2. 적응적 임계값 계산
                 max_prob = top_k_probs[0]
-                
-                # 가장 높은 확률의 40% 이상이면서, 최소 0.2 이상인 라벨들 선택
-                adaptive_threshold = max(0.45, max_prob * 0.75)
-                
-                # 3. 라벨 선택
-                for i, idx in enumerate(top_k_indices):
+                adaptive_threshold = max(0.6, max_prob * 1.0)
+                for idx in top_k_indices:
                     if prob[idx] >= adaptive_threshold and len(predicted_labels) < 2:
                         predicted_labels.append(label_encoder.classes_[idx])
-                    elif len(predicted_labels) >= 1 and prob[idx] < adaptive_threshold:
-                        break
-                
-                # 4. 최소 1개 보장
                 if len(predicted_labels) == 0:
                     predicted_labels = [label_encoder.classes_[top_k_indices[0]]]
-                
-                # 5. 빈도 기반 후처리 (너무 흔한 라벨만 있으면 다양성 추가)
-                #if len(predicted_labels) == 1 and len(label_counts) > 0:
-                 #   main_label = predicted_labels[0]
-                  #  main_count = label_counts.get(main_label, 0)
-                    
-                    # 매우 흔한 라벨(상위 5개)이면서 두 번째 확률이 충분히 높으면 추가
-                    #if main_count > 10000 and len(top_k_indices) > 1:
-                     #   second_prob = prob[top_k_indices[1]]
-                      #  if second_prob > 0.05:  # 15% 이상이면 추가
-                       #     predicted_labels.append(label_encoder.classes_[top_k_indices[1]])
-                
                 all_predictions.append(predicted_labels)
-    
+
+                # 실제 정답 라벨 리스트 축적
+                true_labels = test_data[batch_start + i].get("blend_notes", [])
+                all_true_labels.append(true_labels)
+
     print(f"예측 완료. 총 {len(all_predictions)}개의 예측 결과 생성")
-    
-    # 예측 통계
+
+    # (평가 통계도 그대로 유지)
     prediction_counts = [len(pred) for pred in all_predictions]
     unique_labels = set()
     for pred in all_predictions:
         unique_labels.update(pred)
-    
     print(f"평균 예측 라벨 수: {np.mean(prediction_counts):.2f}")
     print(f"예측된 고유 라벨 수: {len(unique_labels)}")
     print(f"1개 라벨 예측: {sum(1 for x in prediction_counts if x == 1)}개")
     print(f"2개 라벨 예측: {sum(1 for x in prediction_counts if x == 2)}개")
     print(f"3개 라벨 예측: {sum(1 for x in prediction_counts if x == 3)}개")
-    
-    # 예측된 라벨 분포
     all_predicted_labels = []
     for pred in all_predictions:
         all_predicted_labels.extend(pred)
-    
-    from collections import Counter
     pred_distribution = Counter(all_predicted_labels)
     print(f"예측 라벨 분포 (상위 10개): {pred_distribution.most_common(10)}")
-    
-    return all_predictions
 
+    return all_predictions, all_true_labels, label_encoder  # 모든 반환값 추가
 
-# 기존 predict 함수를 대체
 predict = predict_with_adaptive_threshold
-
 
 if __name__ == "__main__":
     import sys
-    import json
-
     # 커맨드라인 인자로 테스트 데이터 경로와 모델 경로를 받음
     test_data_path = sys.argv[1]
     model_path = sys.argv[2]
 
-    predictions = predict(test_data_path, model_path)
+    predictions, true_labels, label_encoder = predict(test_data_path, model_path)
+
+    # (정확도 및 F1 측정)
+    num_classes = len(label_encoder.classes_)
+    y_true = np.zeros((len(true_labels), num_classes))
+    y_pred = np.zeros((len(predictions), num_classes))
+    for i, labels in enumerate(true_labels):
+        for lbl in labels:
+            if lbl in label_encoder.classes_:
+                y_true[i, list(label_encoder.classes_).index(lbl)] = 1
+    for i, labels in enumerate(predictions):
+        for lbl in labels:
+            if lbl in label_encoder.classes_:
+                y_pred[i, list(label_encoder.classes_).index(lbl)] = 1
+    exact_match_acc = accuracy_score(y_true, y_pred)
+    micro_f1 = f1_score(y_true, y_pred, average="micro")
+    macro_f1 = f1_score(y_true, y_pred, average="macro")
+    exact_match_percent = exact_match_acc * 100
+
+    print("==== 평가 결과 ====")
+    print(f"정확도 (Exact Match Ratio): {exact_match_acc:.4f}")
+    print(f"정확도 % (Exact Match Ratio, %): {exact_match_percent:.2f} %")
+    print(f"F1 Score (Micro): {micro_f1:.4f}")
+    print(f"F1 Score (Macro): {macro_f1:.4f}")
 
     # 예측 결과를 JSON으로 파일 저장
     output_path = "balanced_predictions.json"
