@@ -278,7 +278,7 @@ def predict_with_adaptive_threshold(test_data_path: str, model_path: str) -> lis
                 max_prob = top_k_probs[0]
                 
                 # 가장 높은 확률의 40% 이상이면서, 최소 0.2 이상인 라벨들 선택
-                adaptive_threshold = max(0.45, max_prob * 0.75)
+                adaptive_threshold = max(0.5, max_prob * 0.9)
                 
                 # 3. 라벨 선택
                 for i, idx in enumerate(top_k_indices):
@@ -292,15 +292,15 @@ def predict_with_adaptive_threshold(test_data_path: str, model_path: str) -> lis
                     predicted_labels = [label_encoder.classes_[top_k_indices[0]]]
                 
                 # 5. 빈도 기반 후처리 (너무 흔한 라벨만 있으면 다양성 추가)
-                #if len(predicted_labels) == 1 and len(label_counts) > 0:
-                 #   main_label = predicted_labels[0]
-                  #  main_count = label_counts.get(main_label, 0)
+                if len(predicted_labels) == 1 and len(label_counts) > 0:
+                    main_label = predicted_labels[0]
+                    main_count = label_counts.get(main_label, 0)
                     
                     # 매우 흔한 라벨(상위 5개)이면서 두 번째 확률이 충분히 높으면 추가
-                    #if main_count > 10000 and len(top_k_indices) > 1:
-                     #   second_prob = prob[top_k_indices[1]]
-                      #  if second_prob > 0.05:  # 15% 이상이면 추가
-                       #     predicted_labels.append(label_encoder.classes_[top_k_indices[1]])
+                    if main_count > 10000 and len(top_k_indices) > 1:
+                        second_prob = prob[top_k_indices[1]]
+                        if second_prob > 0.05:  # 15% 이상이면 추가
+                            predicted_labels.append(label_encoder.classes_[top_k_indices[1]])
                 
                 all_predictions.append(predicted_labels)
     
@@ -349,4 +349,5 @@ if __name__ == "__main__":
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(predictions, f, ensure_ascii=False, indent=2)
 
+    
     print(f"예측 완료. 결과가 '{output_path}' 에 저장되었습니다.")
