@@ -1,2 +1,3 @@
 .venv/
 model/deepscent_train.json
+myvenv/
