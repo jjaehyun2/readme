@@ -11,13 +11,11 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 # 분자 특징 계산 함수
 def featurize_smiles(smiles):
     mol = Chem.MolFromSmiles(smiles)
-    # 파싱 실패 시 nan 반환
     if mol is None:
         return [np.nan] * 6
     return [
-        # 분자 특성 리스트
-        Descriptors.Molwt(mol),
-        Descriptors.MolLogp(mol),
+        Descriptors.MolWt(mol),
+        Descriptors.MolLogP(mol),
         Descriptors.TPSA(mol),
         Descriptors.NumHDonors(mol),
         Descriptors.NumHAcceptors(mol),
@@ -43,7 +41,7 @@ def train(train_data_path: str, save_path: str):
     # 학습, 검증 데이터 분리
     x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.2, random_state=42)
 
-    # 모델 정의 (회귀 방식)
+    # 모델 정의
     model = RandomForestRegressor(
         n_estimators=200,
         max_depth=None,
@@ -56,13 +54,12 @@ def train(train_data_path: str, save_path: str):
 
     # 검증 성능 출력
     y_pred = model.predict(x_val)
-    rmse = mean_squared_error(y_val, y_pred, squared=False)
+    rmse = np.sqrt(mean_squared_error(y_val, y_pred))  # squared 제거
     mae = mean_absolute_error(y_val, y_pred)
     print(f"[Validation] RMSE={rmse:.4f}, MAE={mae:.4f}")
 
+    # 전체 데이터로 재학습 후 저장
     model.fit(x, y)
-
-    # 모델 저장
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     joblib.dump(model, save_path)
     print(f"✅ 모델 저장 완료: {save_path}")
@@ -71,7 +68,6 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_csv", type=str, required=True, help="학습 CSV 파일 경로")
-    parser.add_argument("--save_path", type=str, default="model/model.pt", help="저장할 모델 경로")
+    parser.add_argument("--save_path", type=str, default="model2/model.pt", help="저장할 모델 경로")
     args = parser.parse_args()
     train(args.train_csv, args.save_path)
-
