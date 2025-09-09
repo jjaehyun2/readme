@@ -41,7 +41,7 @@ DESCRIPTOR_NAMES = [
     "RingCount",
 ]
 
-# 특징 계산 함수
+# 특징(feature) 계산 함수
 def _compute_descriptors(mol: Chem.Mol) -> np.ndarray:
     """RDKit Mol 객체에서 기본적인 물리·화학 descriptor 계산"""
     if mol is None:
@@ -93,13 +93,14 @@ def featurize_smiles(smiles_list, radius=2, n_bits=2048) -> Tuple[np.ndarray, np
         descs.append(_compute_descriptors(mol))
     return np.asarray(fps, dtype=np.uint8), np.asarray(descs, dtype=float)
 
+# 구성 클래스
 @dataclass
 class FeatureConfig:
     """특징(feature) 관련 설정"""
     radius: int = 2
     n_bits: int = 2048
     descriptor_names: Tuple[str, ...] = tuple(DESCRIPTOR_NAMES)
-    y_transform: str = "log1p"
+    y_transform: str = "log1p"  # 타겟값 변환 방식: "none", "log1p"
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -113,6 +114,7 @@ def _transform_y(y: np.ndarray, mode: str) -> Tuple[np.ndarray, Dict[str, Any]]:
         return np.log1p(y.clip(min=0)), {"mode": mode}
     return y, {"mode": "none"}
 
+
 def _inverse_transform_y(yhat: np.ndarray, info: Dict[str, Any]) -> np.ndarray:
     """예측값 역변환 (로그 변환 복원 등)"""
     mode = info.get("mode", "none")
@@ -124,13 +126,13 @@ def _inverse_transform_y(yhat: np.ndarray, info: Dict[str, Any]) -> np.ndarray:
 def _load_training_csv(path: str) -> pd.DataFrame:
     """CSV 파일 로드 및 열 이름 표준화"""
     df = pd.read_csv(path)
-    #표준 이름으로 변경
+    # 다양한 이름을 표준 이름으로 변경
     rename_map = {
         "Drug_ID": "Drug_ID",
         "Drug": "Drug",
         "SMILES": "Drug",
         "Y": "Y",
-        "Target": "Y",
+        "Target": "Y", 
     }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
     if "Drug" not in df.columns or "Y" not in df.columns:
