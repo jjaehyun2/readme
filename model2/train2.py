@@ -51,7 +51,6 @@ def _compute_descriptors(mol: Chem.Mol) -> np.ndarray:
         rdMolDescriptors.CalcNumHBD(mol),
         rdMolDescriptors.CalcNumRotatableBonds(mol),
         rdMolDescriptors.CalcNumSaturatedRings(mol) + rdMolDescriptors.CalcNumAromaticRings(mol),
-        Descriptors.MolLogS(mol),
         Descriptors.FractionCSP3(mol),
         Descriptors.HeavyAtomCount(mol)
     ], dtype=float)
