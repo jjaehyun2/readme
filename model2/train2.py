@@ -27,7 +27,7 @@ except Exception:
 warnings.filterwarnings("ignore", category=UserWarning)
 np.random.seed(42)
 
-# 기존 descriptor + 3개 추가
+# 기존 descriptor + 2개 추가
 DESCRIPTOR_NAMES = [
     "MolWt",
     "LogP",
@@ -36,7 +36,6 @@ DESCRIPTOR_NAMES = [
     "NumHBD",
     "NumRotatableBonds",
     "RingCount",
-    "MolLogS",
     "FractionCSP3",
     "HeavyAtomCount"
 ]
